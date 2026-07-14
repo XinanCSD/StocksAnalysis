@@ -1,0 +1,2 @@
+pandas<3,>=2.1
+yfinance[repair]<2,>=1.0
