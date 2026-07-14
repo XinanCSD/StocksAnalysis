@@ -95,10 +95,27 @@ export STOCK_REQUEST_PAUSE_SECONDS=1
 stock-data run
 ```
 
+Windows PowerShell：
+
+```powershell
+$env:STOCK_UPDATE_MINUTES = "30"
+$env:STOCK_REQUEST_PAUSE_SECONDS = "1"
+stock-data run
+```
+
+上述 Windows 环境变量仅对当前 PowerShell 窗口有效；关闭窗口后需要重新设置。
+
 默认只保存正常交易时段。若确实需要 Yahoo 提供的盘前/盘后数据：
 
 ```bash
 export STOCK_PREPOST=1
+stock-data run
+```
+
+Windows PowerShell：
+
+```powershell
+$env:STOCK_PREPOST = "1"
 stock-data run
 ```
 
