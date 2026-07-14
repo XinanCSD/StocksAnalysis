@@ -20,10 +20,35 @@
 
 需要 Python 3.11 或更高版本。
 
+### macOS / Linux
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
+```
+
+### Windows（PowerShell）
+
+在项目目录中打开 PowerShell，然后运行：
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+如果 PowerShell 因执行策略拒绝激活脚本，先在**当前 PowerShell 窗口**执行以下命令，再重新运行激活命令：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+如果没有安装 Python Launcher（`py`），将第一条命令改为：
+
+```powershell
+python -m venv .venv
 ```
 
 这里使用了 `yfinance[repair]`，会同时安装日线价格修复所需的 SciPy。项目对长历史日线启用 `repair=True`；如果曾安装过旧版本的本项目，请再次运行上面的安装命令来补齐依赖。5 分钟数据不启用价格重建，因为 yfinance 可能为较早的 5 分钟 K 线继续请求已经超过 Yahoo 保留期的 1/2 分钟数据，并打印误导性的内部失败；这不影响项目保存原始 5 分钟 OHLC 和公司行动。
