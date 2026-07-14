@@ -33,7 +33,7 @@ python -m pip install -e .
 在项目目录中打开 PowerShell，然后运行：
 
 ```powershell
-py -3.11 -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
