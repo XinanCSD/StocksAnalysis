@@ -1,0 +1,9 @@
+/* The chart canvas owns pointer events; keep the indicator controls above it. */
+.legend {
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.legend .chip {
+  pointer-events: auto;
+}
