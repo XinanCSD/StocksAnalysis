@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import INITIAL_SYMBOLS
+from .symbols import normalize_symbol
 
 
 SCHEMA = """
@@ -18,6 +19,8 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 CREATE TABLE IF NOT EXISTS symbols (
     symbol TEXT PRIMARY KEY,
+    input_symbol TEXT,
+    yahoo_symbol TEXT,
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     created_at_utc TEXT NOT NULL
 );
@@ -105,36 +108,52 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._migrate_symbols(connection)
             connection.execute(
-                "INSERT OR IGNORE INTO schema_version(version, applied_at_utc) VALUES (1, ?)",
+                "INSERT OR IGNORE INTO schema_version(version, applied_at_utc) VALUES (2, ?)",
                 (utc_now_text(),),
             )
             connection.executemany(
-                "INSERT OR IGNORE INTO symbols(symbol, enabled, created_at_utc) VALUES (?, 1, ?)",
-                [(symbol, utc_now_text()) for symbol in INITIAL_SYMBOLS],
+                """INSERT OR IGNORE INTO symbols(symbol, input_symbol, yahoo_symbol, enabled, created_at_utc)
+                   VALUES (?, ?, ?, 1, ?)""",
+                [(symbol, symbol, symbol, utc_now_text()) for symbol in INITIAL_SYMBOLS],
             )
 
+    @staticmethod
+    def _migrate_symbols(connection: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(symbols)")}
+        if "input_symbol" not in columns:
+            connection.execute("ALTER TABLE symbols ADD COLUMN input_symbol TEXT")
+        if "yahoo_symbol" not in columns:
+            connection.execute("ALTER TABLE symbols ADD COLUMN yahoo_symbol TEXT")
+        connection.execute("UPDATE symbols SET input_symbol = COALESCE(input_symbol, symbol)")
+        connection.execute("UPDATE symbols SET yahoo_symbol = COALESCE(yahoo_symbol, symbol)")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_symbols_yahoo ON symbols(yahoo_symbol)")
+
     def add_symbols(self, symbols: Iterable[str]) -> list[str]:
-        normalized = sorted({symbol.strip().upper() for symbol in symbols if symbol.strip()})
+        normalized = [normalize_symbol(symbol) for symbol in symbols if symbol.strip()]
+        by_yahoo = {yahoo: entered for entered, yahoo in normalized}
         with self.connect() as connection:
             connection.executemany(
-                """INSERT INTO symbols(symbol, enabled, created_at_utc) VALUES (?, 1, ?)
-                   ON CONFLICT(symbol) DO UPDATE SET enabled = 1""",
-                [(symbol, utc_now_text()) for symbol in normalized],
+                """INSERT INTO symbols(symbol, input_symbol, yahoo_symbol, enabled, created_at_utc)
+                   VALUES (?, ?, ?, 1, ?)
+                   ON CONFLICT(symbol) DO UPDATE SET enabled = 1,
+                       input_symbol=excluded.input_symbol, yahoo_symbol=excluded.yahoo_symbol""",
+                [(yahoo, entered, yahoo, utc_now_text()) for yahoo, entered in sorted(by_yahoo.items())],
             )
-        return normalized
+        return sorted(by_yahoo)
 
     def set_enabled(self, symbol: str, enabled: bool) -> None:
         with self.connect() as connection:
             cursor = connection.execute(
                 "UPDATE symbols SET enabled = ? WHERE symbol = ?",
-                (int(enabled), symbol.strip().upper()),
+                (int(enabled), normalize_symbol(symbol)[1]),
             )
             if cursor.rowcount == 0:
                 raise ValueError(f"Unknown symbol: {symbol}")
 
     def list_symbols(self, enabled_only: bool = False) -> list[sqlite3.Row]:
-        query = "SELECT symbol, enabled, created_at_utc FROM symbols"
+        query = "SELECT symbol, input_symbol, yahoo_symbol, enabled, created_at_utc FROM symbols"
         if enabled_only:
             query += " WHERE enabled = 1"
         query += " ORDER BY symbol"
@@ -226,9 +245,9 @@ class Database:
 
     def status_rows(self) -> list[sqlite3.Row]:
         with self.connect() as connection:
-            return list(
+            rows = list(
                 connection.execute(
-                    """SELECT s.symbol, s.enabled,
+                    """SELECT s.symbol, s.input_symbol, s.yahoo_symbol, s.enabled,
                               (SELECT COUNT(*) FROM daily_prices d WHERE d.symbol=s.symbol) daily_rows,
                               (SELECT COUNT(*) FROM intraday_5m_prices i WHERE i.symbol=s.symbol) intraday_rows,
                               MAX(CASE WHEN ds.interval='1d' THEN ds.last_success_utc END) daily_success,
@@ -236,9 +255,50 @@ class Database:
                               MAX(ds.last_error) last_error
                        FROM symbols s
                        LEFT JOIN download_state ds ON ds.symbol=s.symbol
-                       GROUP BY s.symbol, s.enabled ORDER BY s.symbol"""
+                       GROUP BY s.symbol, s.input_symbol, s.yahoo_symbol, s.enabled ORDER BY s.symbol"""
                 )
             )
+        # Old databases may contain an alias such as BRK.B from before symbol
+        # normalization existed. Hide that legacy duplicate while retaining its
+        # historical rows on disk; the canonical BRK-B record is authoritative.
+        return [row for row in rows if normalize_symbol(row["symbol"])[1] == row["symbol"]]
+
+    def get_symbol(self, value: str) -> sqlite3.Row | None:
+        yahoo = normalize_symbol(value)[1]
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT symbol, input_symbol, yahoo_symbol, enabled, created_at_utc FROM symbols WHERE symbol=?",
+                (yahoo,),
+            ).fetchone()
+
+    def has_extended_hours(self) -> bool:
+        # A regular US session is 09:30 <= New York time < 16:00. SQLite has no
+        # timezone database, so inspect the small set of available timestamps in Python.
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        ny = ZoneInfo("America/New_York")
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT timestamp_utc FROM intraday_5m_prices ORDER BY timestamp_utc DESC LIMIT 10000"
+            )
+            for row in rows:
+                local = datetime.fromtimestamp(row["timestamp_utc"], UTC).astimezone(ny)
+                if local.weekday() < 5 and not ((local.hour, local.minute) >= (9, 30) and (local.hour, local.minute) < (16, 0)):
+                    return True
+        return False
+
+    def data_version(self, symbol: str) -> str:
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT COALESCE(MAX(downloaded_at_utc), '') AS value FROM (
+                       SELECT downloaded_at_utc FROM daily_prices WHERE symbol=?
+                       UNION ALL
+                       SELECT downloaded_at_utc FROM intraday_5m_prices WHERE symbol=?
+                   )""",
+                (symbol, symbol),
+            ).fetchone()
+        return row["value"]
 
     def backup_to(self, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)

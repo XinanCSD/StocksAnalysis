@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import threading
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -10,6 +12,8 @@ from .config import make_settings
 from .database import Database
 from .exporter import export_csv
 from .service import Collector
+from .webapp import create_app
+from .webbuild import ensure_frontend_built
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,7 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("init", help="Create the database and seed initial symbols")
     subparsers.add_parser("update", help="Run one update for all enabled symbols")
-    subparsers.add_parser("run", help="Update immediately, then every configured interval")
+    run = subparsers.add_parser("run", help="Start the downloader scheduler and local web dashboard")
+    run.add_argument("--host", default="127.0.0.1", help="Dashboard bind host (default: 127.0.0.1)")
+    run.add_argument("--port", type=int, default=7880, help="Dashboard port (default: 7880)")
+    run.add_argument("--browser", action="store_true", help="Open the dashboard in the default browser")
     subparsers.add_parser("status", help="Show symbols, row counts and last updates")
 
     symbols = subparsers.add_parser("symbols", help="Manage symbols")
@@ -75,7 +82,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "update":
         return 0 if Collector(database, settings).update_all() else 1
     if args.command == "run":
-        Collector(database, settings).run_forever()
+        try:
+            ensure_frontend_built()
+        except RuntimeError as exc:
+            print(f"无法启动可视化界面：{exc}", file=sys.stderr)
+            return 2
+        address = f"http://{args.host}:{args.port}"
+        print(f"Stock dashboard: {address}")
+        if args.browser:
+            threading.Timer(0.8, webbrowser.open, args=(address,)).start()
+        import uvicorn
+
+        uvicorn.run(create_app(database, settings), host=args.host, port=args.port, workers=1, log_level="info")
         return 0
     if args.command == "status":
         _print_status(database)
@@ -112,4 +130,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

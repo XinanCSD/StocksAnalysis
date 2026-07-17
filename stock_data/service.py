@@ -20,6 +20,8 @@ class Collector:
         self.stopping = False
 
     def update_symbol(self, symbol: str) -> bool:
+        if self.stopping:
+            return False
         success = True
         latest_daily = self.database.latest_daily_date(symbol)
         start = daily_start(latest_daily, self.settings.daily_overlap_days)
@@ -41,6 +43,8 @@ class Collector:
             self.database.record_failure(symbol, "1d", str(exc))
             LOGGER.exception("%s 1d: update failed", symbol)
 
+        if self.stopping:
+            return False
         time.sleep(self.settings.request_pause_seconds)
         latest_5m = self.database.latest_intraday_timestamp(symbol)
         start_5m = intraday_start(

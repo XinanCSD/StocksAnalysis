@@ -1,2 +1,8 @@
 pandas<3,>=2.1
 yfinance[repair]<2,>=1.0
+fastapi<1,>=0.115
+uvicorn<1,>=0.30
+APScheduler<4,>=3.11
+
+[test]
+httpx2
