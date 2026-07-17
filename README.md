@@ -13,6 +13,7 @@
 - 一次更新，或常驻进程每 30 分钟更新。
 - 按全部/指定 symbol 导出日线和 5 分钟 CSV。
 - 用 SQLite 在线备份 API 生成可安全复制的数据库快照。
+- 提供本地 Web 行情看板：K 线、OHLC、线型/面积图、技术指标和可交互缩放。
 
 > Yahoo Finance 数据适合个人研究。请自行遵守 Yahoo 的使用条款；它不是交易所级行情，也不应直接用于实盘下单决策。
 
@@ -53,6 +54,22 @@ python -m venv .venv
 
 这里使用了 `yfinance[repair]`，会同时安装日线价格修复所需的 SciPy。项目对长历史日线启用 `repair=True`；如果曾安装过旧版本的本项目，请再次运行上面的安装命令来补齐依赖。5 分钟数据不启用价格重建，因为 yfinance 可能为较早的 5 分钟 K 线继续请求已经超过 Yahoo 保留期的 1/2 分钟数据，并打印误导性的内部失败；这不影响项目保存原始 5 分钟 OHLC 和公司行动。
 
+Web 看板还需要 Node.js 20 或更高版本。首次安装前端依赖（只需一次）：
+
+```bash
+cd web
+npm install
+cd ..
+```
+
+Windows PowerShell：
+
+```powershell
+cd web
+npm install
+cd ..
+```
+
 初始化数据库（其他命令也会自动初始化）：
 
 ```bash
@@ -69,10 +86,24 @@ stock-data init
 stock-data update
 ```
 
-立即运行一次，之后每 30 分钟运行：
+启动本地看板、立即执行一次更新、之后每 30 分钟更新：
 
 ```bash
 stock-data run
+```
+
+默认访问地址为 [http://127.0.0.1:7880](http://127.0.0.1:7880)。前端尚未构建时，`run` 会自动执行 `npm run build`；它不会自动执行 `npm install`。若 Node.js 或前端依赖缺失，命令会输出对应的安装指引。
+
+允许局域网访问或指定端口：
+
+```bash
+stock-data run --host 0.0.0.0 --port 7880
+```
+
+需要自动打开默认浏览器时才传入：
+
+```bash
+stock-data run --browser
 ```
 
 按 `Ctrl+C` 会在当前网络请求完成后安全停止。查看进度和行数：
@@ -83,9 +114,9 @@ stock-data status
 
 首次运行需要为 6 个 symbols 回填数据，耗时会明显长于后续增量更新。单个 symbol 或单个周期失败不会阻止其他任务；错误会记录在 `download_state` 并显示在 `status` 中。命令只要有任何下载失败就返回非零退出码。
 
-### 后台常驻
+### 后台常驻与 Web 服务
 
-开发和手动运行可直接使用 `stock-data run`。需要登录后自动运行时，建议由操作系统的 `launchd`（macOS）或 `systemd`（Linux）管理进程，而不是使用 `nohup`；进程异常退出后可自动重启。
+`stock-data run` 只启动一个 Uvicorn worker；FastAPI 的生命周期负责启动和关闭 APScheduler，避免 reload 或多进程导致重复下载。按 `Ctrl+C` 会优雅停止 Web 服务、调度器及等待中的下载任务。需要登录后自动运行时，建议由操作系统的 `launchd`（macOS）或 `systemd`（Linux）管理该命令。
 
 更新时间可通过环境变量调整：
 
@@ -207,10 +238,12 @@ stock-data update
 ## 8. 测试
 
 ```bash
+python -m pip install -e ".[test]"
 python -m unittest discover -s tests -v
+npm --prefix web run build
 ```
 
-测试覆盖两种常见 MultiIndex 排列、字段补全、时间窗口限制和 SQLite UPSERT。测试不访问网络。
+测试覆盖两种常见 MultiIndex 排列、字段补全、SQLite UPSERT、股票代码标准化、盘中聚合锚点、DST、日线周期聚合、图表 API 和静态前端构建。单元测试不访问 Yahoo Finance。
 
 ## 9. 直接用 Python 运行
 
@@ -227,3 +260,56 @@ python -m stock_data export --interval all
 - [yfinance download 参数](https://ranaroussi.github.io/yfinance/reference/yfinance.functions.html)：interval、actions、auto_adjust、60 天盘中限制和 multi_level_index。
 - [yfinance Multi-Level Column Index](https://ranaroussi.github.io/yfinance/advanced/multi_level_columns.html)：多层列索引说明。
 - [SQLite Online Backup API](https://www.sqlite.org/backup.html)：运行期间创建一致数据库快照的原理。
+
+## 11. 本地 Web 可视化
+
+`stock-data run` 启动 FastAPI、APScheduler 和 Vite 构建后的静态页面。浏览器只经由 API 读取 SQLite；SQLite 仍是唯一真实数据源，前端偏好仅保存在浏览器 `localStorage`。
+
+### 页面功能
+
+- 顶部工具栏可选择股票、输入多个股票代码、切换 5m / 30m / 1h / 2h / 4h / 1D / 1W / 1M / 1Y、切换 K 线 / OHLC / 线型 / 面积图、适应全部数据、返回最新数据及深浅主题。
+- 侧边栏显示股票、下载状态、行数与失败信息。添加时支持逗号、空格或换行分隔；例如 `AAPL, BRK.B`。`BRK.B` 会按 Yahoo 的 `BRK-B` 保存和下载，而 `7203.T` 保持不变。
+- 图表由 Lightweight Charts 5.2.0 绘制，支持拖动、滚轮/触控板缩放、十字光标和自适应尺寸。
+- 指标菜单支持多个 SMA、EMA、Bollinger Bands，以及独立 pane 的 Volume、RSI（30/70 参考线）和 MACD。指标只在浏览器内存中计算，不写入 SQLite。
+
+默认显示纽约正常交易时段（09:30–16:00）。若数据库里实际存在盘前或盘后时间戳，页面会显示“包含盘前盘后”开关；不同 session 的盘中聚合不会混合。
+
+### 周期与数据源
+
+| 页面周期 | 数据源 | 处理方式 |
+|---|---|---|
+| 5m | `intraday_5m_prices` | 直接读取 |
+| 30m、1h、2h、4h | `intraday_5m_prices` | 按纽约时间、以 09:30 为锚点动态聚合 |
+| 1D | `daily_prices` | 直接读取 |
+| 1W、1M、1Y | `daily_prices` | 按最后实际交易日动态聚合 |
+
+聚合不会写回数据库。后端只短暂读取 SQLite，并根据数据版本缓存查询；下载完成后缓存失效。所有图表时间均为 UTC Unix 秒。周、月、年 K 线使用该周期最后一个真实交易日，因此节假日不会生成虚假 K 线。
+
+### API
+
+| 接口 | 用途 |
+|---|---|
+| `GET /api/health` | 服务、数据库、调度器和下次更新时间 |
+| `GET /api/symbols` | 股票、数据行数、更新时间和下载状态 |
+| `POST /api/symbols` | 追加一个或多个股票并异步首次回填 |
+| `POST /api/symbols/{symbol}/refresh` | 异步刷新一个股票；同代码不会并发下载 |
+| `GET /api/chart` | 读取或动态聚合图表数据 |
+
+图表示例：
+
+```text
+/api/chart?symbol=AAPL&interval=1h&limit=5000&session=regular
+```
+
+前端每 30 秒查询状态；检测到当前股票的数据版本变化后，仅请求最新一段并使用 `series.update()` 更新最后或新增 K 线，不会反复全量加载。
+
+### 迁移、移动与常见问题
+
+首次运行升级后的版本会执行可重复的 SQLite 迁移：在现有 `symbols` 表增加 `input_symbol` 和 `yahoo_symbol`，同时保留原来的 `symbol` 键、全部行情表及下载状态。现有数据库无需重建。
+
+- **股票代码无效**：网页会在写入前使用 Yahoo 的短请求验证并返回简短错误。
+- **`BRK.B` 与 `BRK-B`**：前者是用户输入格式，后者是 Yahoo 代码；类别股只转换常见 `.A` / `.B`，交易所后缀不改写。
+- **Node.js 未安装**：安装 Node.js 20+，在 `web` 运行一次 `npm install`。
+- **端口被占用**：使用 `stock-data run --port 7881`。
+- **`SQLite locked`**：程序已启用 WAL、30 秒 `busy_timeout` 和短事务；不要用多个采集进程同时写同一数据目录。
+- **Yahoo 临时限流**：等待后重试；失败状态会保留在侧边栏和 `download_state`。
