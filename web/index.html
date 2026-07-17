@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Dashboard</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <div class="brand">Stock Dashboard</div>
+        <select id="symbol-select" aria-label="股票选择"></select>
+        <button id="add-symbol">＋ 添加</button>
+        <div id="intervals" class="button-group"></div>
+        <select id="chart-type" aria-label="图表类型">
+          <option value="candle">K 线</option><option value="bar">OHLC</option>
+          <option value="line">线型图</option><option value="area">面积图</option>
+        </select>
+        <button id="indicators">指标</button>
+        <label id="session-control" class="toggle hidden"><input id="session-toggle" type="checkbox">包含盘前盘后</label>
+        <button id="fit">适应全部</button><button id="latest">最新</button>
+        <button id="theme">☼</button>
+      </header>
+      <main>
+        <aside id="sidebar"><div class="side-title">自选列表</div><div id="symbols"></div></aside>
+        <section id="chart-panel">
+          <div id="quote" class="quote">加载中…</div>
+          <div id="legend" class="legend"></div>
+          <div id="chart"></div>
+          <div id="status" class="status"></div>
+        </section>
+      </main>
+      <div id="indicator-menu" class="popover hidden"></div>
+      <div id="toast" class="toast hidden"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
