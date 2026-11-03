@@ -3,5 +3,6 @@ yfinance[repair]>=1.0,<2
 fastapi>=0.115,<1
 uvicorn>=0.30,<1
 APScheduler>=3.11,<4
+prettytable>=3.12,<4
 # API test client (FastAPI/Starlette test dependency)
 httpx2

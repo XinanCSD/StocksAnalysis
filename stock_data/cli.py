@@ -7,6 +7,7 @@ import threading
 import webbrowser
 from datetime import datetime
 from pathlib import Path
+from prettytable import PrettyTable
 
 from .config import make_settings
 from .analysis import analyze_daily_moves
@@ -105,23 +106,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "analyze":
         analyses = analyze_daily_moves(database, args.symbols)
         for result in analyses:
-            print(f"\n{result.symbol}（可比较交易日：{result.total_days}）")
-            print(f"{'星期':<6}{'上涨':>8}{'下跌':>8}{'平盘':>8}{'上涨占比':>12}{'下跌占比':>12}")
-            print(f"{'':<6}{'涨≤1%':>8}{'涨1-2%':>8}{'涨>2%':>8}{'跌≤1%':>8}{'跌1-2%':>8}{'跌>2%':>8}")
+            table = PrettyTable()
+            table.title = f"{result.symbol}（可比较交易日：{result.total_days}）"
+            table.field_names = [
+                "星期", "上涨天数", "下跌天数", "平盘天数", "上涨占比", "下跌占比",
+                "涨≤1%天数", "涨1–2%天数", "涨>2%天数", "跌≤1%天数", "跌1–2%天数", "跌>2%天数",
+                "涨≤1%占比", "涨1–2%占比", "涨>2%占比", "跌≤1%占比", "跌1–2%占比", "跌>2%占比",
+            ]
             for day in result.weekdays:
-                print(
-                    f"{day.weekday:<6}{day.up_days:>8}{day.down_days:>8}{day.unchanged_days:>8}"
-                    f"{day.up_ratio:>11.1%}{day.down_ratio:>11.1%}"
+                table.add_row(
+                    [day.weekday, day.up_days, day.down_days, day.unchanged_days,
+                     f"{day.up_ratio:.1%}", f"{day.down_ratio:.1%}",
+                     day.up_le_1, day.up_1_to_2, day.up_gt_2,
+                     day.down_le_1, day.down_1_to_2, day.down_gt_2,
+                     f"{day.ratio('up_le_1'):.1%}", f"{day.ratio('up_1_to_2'):.1%}",
+                     f"{day.ratio('up_gt_2'):.1%}", f"{day.ratio('down_le_1'):.1%}",
+                     f"{day.ratio('down_1_to_2'):.1%}", f"{day.ratio('down_gt_2'):.1%}"]
                 )
-                print(
-                    f"{'':<6}{day.up_le_1:>8}{day.up_1_to_2:>8}{day.up_gt_2:>8}"
-                    f"{day.down_le_1:>8}{day.down_1_to_2:>8}{day.down_gt_2:>8}"
-                )
-                print(
-                    f"{'占比':<6}{day.ratio('up_le_1'):>7.1%}{day.ratio('up_1_to_2'):>8.1%}"
-                    f"{day.ratio('up_gt_2'):>8.1%}{day.ratio('down_le_1'):>8.1%}"
-                    f"{day.ratio('down_1_to_2'):>8.1%}{day.ratio('down_gt_2'):>8.1%}"
-                )
+            print(table)
         return 0
     if args.command == "symbols":
         if args.symbol_command == "add":
