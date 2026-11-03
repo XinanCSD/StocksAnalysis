@@ -112,6 +112,14 @@ stock-data run --browser
 stock-data status
 ```
 
+按星期几统计一个或多个股票的日线上涨、下跌和平盘天数：
+
+```bash
+stock-data analyze AAPL MSFT NVDA
+```
+
+每个交易日按收盘价与上一条可用日线收盘价比较，涨跌归属到该日的星期几。首条日线没有前一日可比，因此不计入统计；平盘单独列出。
+
 首次运行需要为 6 个 symbols 回填数据，耗时会明显长于后续增量更新。单个 symbol 或单个周期失败不会阻止其他任务；错误会记录在 `download_state` 并显示在 `status` 中。命令只要有任何下载失败就返回非零退出码。
 
 ### 后台常驻与 Web 服务

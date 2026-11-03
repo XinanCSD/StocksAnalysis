@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import make_settings
+from .analysis import analyze_daily_moves
 from .database import Database
 from .exporter import export_csv
 from .service import Collector
@@ -29,6 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--port", type=int, default=7880, help="Dashboard port (default: 7880)")
     run.add_argument("--browser", action="store_true", help="Open the dashboard in the default browser")
     subparsers.add_parser("status", help="Show symbols, row counts and last updates")
+
+    analysis = subparsers.add_parser("analyze", help="Analyze daily up/down counts by weekday")
+    analysis.add_argument("symbols", nargs="+", help="One or more symbols, e.g. AAPL MSFT")
 
     symbols = subparsers.add_parser("symbols", help="Manage symbols")
     symbol_commands = symbols.add_subparsers(dest="symbol_command", required=True)
@@ -97,6 +101,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "status":
         _print_status(database)
+        return 0
+    if args.command == "analyze":
+        analyses = analyze_daily_moves(database, args.symbols)
+        for result in analyses:
+            print(f"\n{result.symbol}（可比较交易日：{result.total_days}）")
+            print(f"{'星期':<6}{'上涨':>8}{'下跌':>8}{'平盘':>8}")
+            for day in result.weekdays:
+                print(f"{day.weekday:<6}{day.up_days:>8}{day.down_days:>8}{day.unchanged_days:>8}")
         return 0
     if args.command == "symbols":
         if args.symbol_command == "add":
