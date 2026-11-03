@@ -106,24 +106,39 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "analyze":
         analyses = analyze_daily_moves(database, args.symbols)
         for result in analyses:
-            table = PrettyTable()
-            table.title = f"{result.symbol}（可比较交易日：{result.total_days}）"
-            table.field_names = [
-                "星期", "上涨天数", "下跌天数", "平盘天数", "上涨占比", "下跌占比",
-                "涨≤1%天数", "涨1–2%天数", "涨>2%天数", "跌≤1%天数", "跌1–2%天数", "跌>2%天数",
-                "涨≤1%占比", "涨1–2%占比", "涨>2%占比", "跌≤1%占比", "跌1–2%占比", "跌>2%占比",
-            ]
-            for day in result.weekdays:
-                table.add_row(
-                    [day.weekday, day.up_days, day.down_days, day.unchanged_days,
-                     f"{day.up_ratio:.1%}", f"{day.down_ratio:.1%}",
-                     day.up_le_1, day.up_1_to_2, day.up_gt_2,
-                     day.down_le_1, day.down_1_to_2, day.down_gt_2,
-                     f"{day.ratio('up_le_1'):.1%}", f"{day.ratio('up_1_to_2'):.1%}",
-                     f"{day.ratio('up_gt_2'):.1%}", f"{day.ratio('down_le_1'):.1%}",
-                     f"{day.ratio('down_1_to_2'):.1%}", f"{day.ratio('down_gt_2'):.1%}"]
-                )
-            print(table)
+            days = result.weekdays
+            print(f"\n{result.symbol}（可比较交易日：{result.total_days}）")
+            for title, rows in (
+                ("涨跌统计", [
+                    ("上涨天数", [day.up_days for day in days]),
+                    ("下跌天数", [day.down_days for day in days]),
+                    ("平盘天数", [day.unchanged_days for day in days]),
+                    ("上涨占比", [f"{day.up_ratio:.1%}" for day in days]),
+                    ("下跌占比", [f"{day.down_ratio:.1%}" for day in days]),
+                ]),
+                ("涨跌幅分档天数", [
+                    ("涨幅 ≤1%", [day.up_le_1 for day in days]),
+                    ("涨幅 1–2%", [day.up_1_to_2 for day in days]),
+                    ("涨幅 >2%", [day.up_gt_2 for day in days]),
+                    ("跌幅 ≤1%", [day.down_le_1 for day in days]),
+                    ("跌幅 1–2%", [day.down_1_to_2 for day in days]),
+                    ("跌幅 >2%", [day.down_gt_2 for day in days]),
+                ]),
+                ("涨跌幅分档占比", [
+                    ("涨幅 ≤1%", [f"{day.ratio('up_le_1'):.1%}" for day in days]),
+                    ("涨幅 1–2%", [f"{day.ratio('up_1_to_2'):.1%}" for day in days]),
+                    ("涨幅 >2%", [f"{day.ratio('up_gt_2'):.1%}" for day in days]),
+                    ("跌幅 ≤1%", [f"{day.ratio('down_le_1'):.1%}" for day in days]),
+                    ("跌幅 1–2%", [f"{day.ratio('down_1_to_2'):.1%}" for day in days]),
+                    ("跌幅 >2%", [f"{day.ratio('down_gt_2'):.1%}" for day in days]),
+                ]),
+            ):
+                table = PrettyTable()
+                table.title = title
+                table.field_names = ["统计项", *(day.weekday for day in days)]
+                for label, values in rows:
+                    table.add_row([label, *values])
+                print(table)
         return 0
     if args.command == "symbols":
         if args.symbol_command == "add":
